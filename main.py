@@ -2,8 +2,17 @@ from fastapi import FastAPI
 from apis import session_api, message_api, health_check
 import threading
 from utils.kafka_consumer import consume_messages
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(session_api.router, prefix="/sessions")
 app.include_router(message_api.router, prefix="/messages")

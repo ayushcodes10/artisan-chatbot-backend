@@ -41,8 +41,10 @@ def post_message(msg: Message):
         msg.session_id.encode(),
         message_data  # Directly pass the dictionary
     )
+
+    suggestions = [{"sid": "11aauuee", "suggestion_text": "suggestion 1 "},{"sid": "11aauu22", "suggestion_text": "suggestion 2"}, {"sid": "11aauu33", "suggestion_text": "suggestion 3"}]
     
-    return {"user_message": msg.message, "chatbot_response": chatbot_response}
+    return {"user_message": msg.message, "chatbot_response": chatbot_response, "suggestions": suggestions}
 
 @router.put("/edit")
 def edit_message(session_id: str, message_id: str, new_message: str):
