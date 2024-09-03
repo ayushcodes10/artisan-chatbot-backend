@@ -8,7 +8,9 @@ def produce_message(topic, key, value):
         elif not isinstance(key, bytes):
             raise ValueError("Key must be a string or bytes.")
         
-        producer.send(topic, key=key, value=value)
+        result = producer.send(topic, key=key, value=value)
+        r1 = result.get(timeout=10)
+        print("producer result", r1)
         producer.flush()
         
     except Exception as e:

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from services.redis_service import get_redis_client, cache_chat, get_chat_from_cache, update_message_in_cache, delete_chat_from_cache
 from utils.kafka_producer import produce_message
+from services.chat_service import get_message_response
 from uuid import uuid4
 import json
 
@@ -21,7 +22,8 @@ def post_message(msg: Message):
     
     chat.append({"id": message_id, "message": msg.message, "sender": "user"})
     
-    chatbot_response = "This is a message from chatbot"
+    response = get_message_response(msg.session_id,msg.message)
+    chatbot_response = response["response"]
     chat.append({"id": str(uuid4()), "message": chatbot_response, "sender": "chatbot"})
     
     cache_chat(msg.session_id, chat)
@@ -33,16 +35,14 @@ def post_message(msg: Message):
         "chatbot_response": chatbot_response
     }
     
-    # Debug logging
-    print(f"Sending message data: {message_data}")
     
     produce_message(
         'chat-messages',
         msg.session_id.encode(),
-        message_data  # Directly pass the dictionary
+        message_data 
     )
 
-    suggestions = [{"sid": "11aauuee", "suggestion_text": "suggestion 1 "},{"sid": "11aauu22", "suggestion_text": "suggestion 2"}, {"sid": "11aauu33", "suggestion_text": "suggestion 3"}]
+    suggestions = response["suggestions"]
     
     return {"user_message": msg.message, "chatbot_response": chatbot_response, "suggestions": suggestions}
 

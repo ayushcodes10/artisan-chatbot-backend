@@ -1,0 +1,141 @@
+import pytest
+from unittest.mock import patch, MagicMock
+from services.message_service import get_message_response
+from services.database_service import SessionLocal
+from services.kafka_service import get_kafka_producer, get_kafka_consumer
+from services.redis_service import (cache_chat, cache_suggestions, get_message_from_cache,
+                                     check_suggestion_in_cache, get_chat_from_cache, delete_chat_from_cache,
+                                     update_message_in_cache)
+import json
+
+@patch('services.kafka_service.KafkaProducer')
+@patch('services.kafka_service.KafkaConsumer')
+def test_get_kafka_producer(mock_kafka_producer, mock_kafka_consumer):
+    mock_producer = MagicMock()
+    mock_kafka_producer.return_value = mock_producer
+
+    mock_future = MagicMock()
+    mock_producer.send.return_value = mock_future
+    mock_future.get.return_value = "success"
+
+    producer = get_kafka_producer()
+    
+    assert producer is not None
+    mock_kafka_producer.assert_called_once_with(
+        bootstrap_servers="kafka:9092",
+        value_serializer=lambda v: json.dumps(v).encode('utf-8') if v is not None else None,
+        key_serializer=lambda k: k if isinstance(k, bytes) else k.encode('utf-8') if k is not None else None
+    )
+    mock_producer.send.assert_called_once_with('test_topic', {'test': 'message'})
+
+@patch('services.kafka_service.KafkaProducer')
+@patch('services.kafka_service.KafkaConsumer')
+def test_get_kafka_consumer(mock_kafka_producer, mock_kafka_consumer):
+    mock_consumer = MagicMock()
+    mock_kafka_consumer.return_value = mock_consumer
+
+    mock_consumer.partitions_for_topic.return_value = {0}
+
+    consumer = get_kafka_consumer('test_topic')
+    
+    assert consumer is not None
+    mock_kafka_consumer.assert_called_once_with(
+        'test_topic',
+        bootstrap_servers="kafka:9092",
+        value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else {},
+        group_id='my-consumer-group',
+        auto_offset_reset='earliest'
+    )
+    assert mock_consumer.partitions_for_topic.called
+
+@patch('services.redis_service.get_redis_client')
+def test_cache_chat(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    session_id = 'test-session-id'
+    messages = [{'id': '1', 'message': 'Hello', 'sender': 'user'}]
+    
+    cache_chat(session_id, messages)
+    
+    mock_redis_client.set.assert_called_once_with(session_id, json.dumps(messages))
+
+@patch('services.redis_service.get_redis_client')
+def test_cache_suggestions(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    message = 'test-message'
+    data = {'response': 'How can I assist?', 'suggestions': ['Option 1', 'Option 2']}
+    
+    cache_suggestions(message, data)
+    
+    mock_redis_client.set.assert_called_once_with(f'suggestion-{message}', json.dumps(data))
+
+@patch('services.redis_service.get_redis_client')
+def test_get_message_from_cache(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    message = 'test-message'
+    mock_redis_client.get.side_effect = [json.dumps({'response': 'Response from cache', 'suggestions': ['Option 1']}), None]
+    
+    response = get_message_from_cache(message)
+    
+    assert response['response'] == 'Response from cache'
+    assert response['suggestions'] == ['Option 1']
+
+@patch('services.redis_service.get_redis_client')
+def test_check_suggestion_in_cache(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    mock_redis_client.scan_iter.return_value = ['suggestion-test-message']
+    
+    result = check_suggestion_in_cache()
+    
+    assert result is True
+    mock_redis_client.scan_iter.assert_called_once_with(match='suggestion-')
+
+@patch('services.redis_service.get_redis_client')
+def test_get_chat_from_cache(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    session_id = 'test-session-id'
+    chat_data = [{'id': '1', 'message': 'Hello', 'sender': 'user'}]
+    mock_redis_client.get.return_value = json.dumps(chat_data)
+    
+    chat = get_chat_from_cache(session_id)
+    
+    assert chat == chat_data
+    mock_redis_client.get.assert_called_once_with(session_id)
+
+@patch('services.redis_service.get_redis_client')
+def test_delete_chat_from_cache(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    session_id = 'test-session-id'
+    
+    delete_chat_from_cache(session_id)
+    
+    mock_redis_client.delete.assert_called_once_with(session_id)
+
+@patch('services.redis_service.get_redis_client')
+def test_update_message_in_cache(mock_get_redis_client):
+    mock_redis_client = MagicMock()
+    mock_get_redis_client.return_value = mock_redis_client
+    
+    session_id = 'test-session-id'
+    message_id = '1'
+    new_message = 'Updated message'
+    
+    initial_chat = [{'id': message_id, 'message': 'Old message', 'sender': 'user'}]
+    updated_chat = [{'id': message_id, 'message': new_message, 'sender': 'user'}]
+    
+    mock_redis_client.get.return_value = json.dumps(initial_chat)
+    
+    update_message_in_cache(session_id, message_id, new_message)
+    
+    mock_redis_client.set.assert_called_once_with(session_id, json.dumps(updated_chat))

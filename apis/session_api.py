@@ -16,7 +16,7 @@ def create_session():
     db.commit()
     
     # Initialize chat in Redis
-    initial_message = {"id": str(uuid.uuid4()), "message": "Hi I am Ava, can I get your name?", "sender": "chatbot"}
+    initial_message = {"id": str(uuid.uuid4()), "message": "Hi I am Ava, Helping you simplify state compliance for business accross the board. Can I get your name please?", "sender": "chatbot"}
     cache_chat(session_id, [initial_message])
     
     db.close()
