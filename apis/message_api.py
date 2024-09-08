@@ -67,36 +67,29 @@ def post_message(msg: Message):
     # Return the user message, chatbot response, and suggestions in the API response
     return {"user_message": msg.message, "chatbot_response": chatbot_response, "suggestions": suggestions}
 
-# Endpoint to handle editing an existing message in a chat session
-@router.put("/edit")
-def edit_message(session_id: str, message_id: str, new_message: str):
-    # Update the specified message in the cache with the new content
-    update_message_in_cache(session_id, message_id, new_message)
-    
-    # Produce a Kafka message indicating the edit operation
-    produce_message(
-        'chat-messages', 
-        key=session_id.encode(), 
-        value=json.dumps({
-            "operation": "edit",           # Operation type
-            "session_id": session_id,      # Session ID
-            "message_id": message_id,      # Message ID
-            "new_message": new_message     # New message content
-        }).encode()
-    )
-    
-    # Return a success message
-    return {"message": "Message updated"}
-
-# Endpoint to handle deleting a message from a chat session
+# Endpoint to handle deleting the last user and chatbot messages from a chat session
 @router.delete("/delete")
-def delete_message(session_id: str, message_id: str):
+def delete_last_messages(session_id: str):
     # Retrieve the current chat session from the cache using the session_id
     chat = get_chat_from_cache(session_id)
     
-    # Filter out the message to be deleted and the corresponding chatbot response
-    chat = [msg for msg in chat if msg['id'] != message_id]           # Remove the specific user message
-    chat = [msg for msg in chat if msg['sender'] != 'chatbot']        # Remove the corresponding chatbot response
+    # Find the last user message
+    last_user_index = None
+    last_chatbot_index = None
+    
+    # Iterate over the messages to find the last user message and the corresponding chatbot message
+    for i in range(len(chat) - 1, -1, -1):
+        if chat[i]['sender'] == 'user' and last_user_index is None:
+            last_user_index = i
+        elif chat[i]['sender'] == 'chatbot' and last_user_index is not None:
+            last_chatbot_index = i
+            break  # Stop once the chatbot response corresponding to the last user message is found
+    
+    # If both messages are found, delete them
+    if last_user_index is not None and last_chatbot_index is not None:
+        # Remove the last user message and the corresponding chatbot message from the chat
+        del chat[last_user_index]
+        del chat[last_chatbot_index - 1]  # Adjust the index after removing the user message
     
     # Cache the updated chat session in Redis
     cache_chat(session_id, chat)
@@ -108,9 +101,19 @@ def delete_message(session_id: str, message_id: str):
         value=json.dumps({
             "operation": "delete",         # Operation type
             "session_id": session_id,      # Session ID
-            "message_id": message_id       # Message ID
+            "message_type": "last"         # Indicates the last messages were deleted
         }).encode()
     )
     
     # Return a success message
-    return {"message": "Message deleted"}
+    return {"message": "Last user and chatbot messages deleted"}
+
+# Endpoint to handle editing an existing message in a chat session
+@router.put("/edit")
+def edit_message(session_id: str, new_message: str):
+    # Step 1: Delete the last user and chatbot messages
+    delete_last_messages(session_id)
+
+    # Step 2: Create a new message with the updated content
+    message_data = Message(session_id=session_id, message=new_message)
+    return post_message(message_data)
