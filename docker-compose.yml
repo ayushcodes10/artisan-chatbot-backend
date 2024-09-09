@@ -20,6 +20,7 @@ services:
 
   kafka:
     image: wurstmeister/kafka:latest
+    mem_limit: 2g
     container_name: kafka
     ports:
       - "9092:9092"
